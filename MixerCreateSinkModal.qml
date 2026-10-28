@@ -189,56 +189,57 @@ Rectangle {
                 }
             }
 
-            // Create button
-            Rectangle {
-                id: createButton
-                width: 80
-                height: 30
-                radius: 6
-                color: sinkNameInput.text.trim().length > 0 ? Theme.primary : Theme.withAlpha(Theme.primary, 0.4)
+                // Create button
+                Rectangle {
+                    id: createButton
+                    width: 80
+                    height: 30
+                    radius: 6
+                    color: sinkNameInput.text.trim().length > 0 ? Theme.primary : Theme.withAlpha(Theme.primary, 0.4)
 
-                function createSink() {
-                    const rawName = sinkNameInput.text.trim();
-                    if (!rawName) return;
-                    const safeName = rawName.replace(/[^a-zA-Z0-9_-]/g, "_");
-                    creatingSpinner.running = true;
-                    statusText.text = "Creating " + safeName + "...";
-                    createSinkProcess.command = [
-                        "pactl",
-                        "load-module",
-                        "module-null-sink",
-                        "sink_name=" + safeName,
-                        "sink_properties=device.description=" + rawName
-                    ];
-                    createSinkProcess.running = true;
-                }
-
-                Row {
-                    anchors.centerIn: parent
-                    spacing: 4
-
-                    DankIcon {
-                        name: "add"
-                        size: 14
-                        color: Theme.onPrimary
-                        anchors.verticalCenter: parent.verticalCenter
+                    function createSink() {
+                        const rawName = sinkNameInput.text.trim();
+                        if (!rawName) return;
+                        const safeName = rawName.replace(/[^a-zA-Z0-9_-]/g, "_");
+                        creatingSpinner.running = true;
+                        statusText.text = "Creating " + safeName + "...";
+                        createSinkProcess.command = [
+                            "pactl",
+                            "load-module",
+                            "module-null-sink",
+                            "sink_name=" + safeName,
+                            "sink_properties=device.description=" + rawName
+                        ];
+                        createSinkProcess.running = true;
                     }
 
-                    StyledText {
-                        text: "Create"
-                        font.pixelSize: 11
-                        font.weight: Font.Bold
-                        color: Theme.onPrimary
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-                }
+                    Row {
+                        anchors.centerIn: parent
+                        spacing: 4
 
-                MouseArea {
-                    anchors.fill: parent
-                    cursorShape: sinkNameInput.text.trim().length > 0 ? Qt.PointingHandCursor : Qt.ArrowCursor
-                    onClicked: {
-                        if (sinkNameInput.text.trim().length > 0) {
-                            createButton.createSink();
+                        DankIcon {
+                            name: "add"
+                            size: 14
+                            color: Theme.onPrimary
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+
+                        StyledText {
+                            text: "Create"
+                            font.pixelSize: 11
+                            font.weight: Font.Bold
+                            color: Theme.onPrimary
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: sinkNameInput.text.trim().length > 0 ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        onClicked: {
+                            if (sinkNameInput.text.trim().length > 0) {
+                                createButton.createSink();
+                            }
                         }
                     }
                 }

@@ -12,6 +12,7 @@ Rectangle {
     required property var node
     property bool isPinned: false
     property bool isDefaultSink: false
+    property bool isMasterSink: false
     property real maxVolume: 1.0
     property bool showVuMeter: true
     property var customAliases: ({})
@@ -19,6 +20,7 @@ Rectangle {
 
     signal pinToggled(string nodeName)
     signal setDefaultRequested(var targetNode)
+    signal setMasterRequested(string nodeName)
 
     readonly property var audio: (node && node.audio) ? node.audio : null
     readonly property real currentVol: audio ? audio.volume : 0.0
@@ -30,9 +32,9 @@ Rectangle {
     width: parent ? parent.width : 420
     height: 58
     radius: Theme.cornerRadius
-    color: Theme.withAlpha(Theme.surfaceContainer || "#222", 0.75)
-    border.width: isDefaultSink ? 2 : 1
-    border.color: isDefaultSink ? Theme.primary : Theme.withAlpha(Theme.outline || "#555", 0.25)
+    color: isMasterSink ? Theme.withAlpha(Theme.primaryContainer || "#332211", 0.5) : Theme.withAlpha(Theme.surfaceContainer || "#222", 0.75)
+    border.width: (isMasterSink || isDefaultSink) ? 2 : 1
+    border.color: (isMasterSink || isDefaultSink) ? Theme.primary : Theme.withAlpha(Theme.outline || "#555", 0.25)
 
     Row {
         anchors.fill: parent
@@ -61,7 +63,7 @@ Rectangle {
 
         // Center Content: Label, Slider & VU Meter
         Column {
-            width: parent.width - 36 - 10 - 110 - 10
+            width: parent.width - 36 - 10 - 132 - 10
             height: parent.height
             anchors.verticalCenter: parent.verticalCenter
             spacing: 2
@@ -83,6 +85,23 @@ Rectangle {
                         color: Theme.surfaceText
                         elide: Text.ElideRight
                         width: Math.min(implicitWidth, root.width - 240)
+                    }
+
+                    Rectangle {
+                        visible: root.isMasterSink
+                        width: 44
+                        height: 14
+                        radius: 3
+                        color: Theme.primary
+                        anchors.verticalCenter: parent.verticalCenter
+
+                        StyledText {
+                            anchors.centerIn: parent
+                            text: "MASTER"
+                            font.pixelSize: 8
+                            font.weight: Font.Black
+                            color: Theme.onPrimary
+                        }
                     }
 
                     Rectangle {
@@ -225,9 +244,9 @@ Rectangle {
             }
         }
 
-        // Action Buttons: Mute, Default, Pin
+        // Action Buttons: Mute, Default, Master, Pin
         Row {
-            width: 100
+            width: 124
             height: 28
             spacing: 4
             anchors.verticalCenter: parent.verticalCenter
@@ -286,6 +305,35 @@ Rectangle {
                     name: root.isDefaultSink ? "check" : "radio_button_unchecked"
                     size: 14
                     color: root.isDefaultSink ? Theme.onPrimary : Theme.surfaceVariantText
+                }
+            }
+
+            // MASTER FADER button
+            Rectangle {
+                width: 28
+                height: 28
+                radius: 4
+                color: root.isMasterSink ? Theme.primary : (masterMouse.containsMouse ? Theme.surfaceContainerHighest : Theme.surfaceContainerHigh)
+                border.width: 1
+                border.color: root.isMasterSink ? Theme.primary : Theme.withAlpha(Theme.outline, 0.4)
+
+                MouseArea {
+                    id: masterMouse
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    hoverEnabled: true
+                    onClicked: {
+                        if (node && node.name) {
+                            root.setMasterRequested(node.name);
+                        }
+                    }
+                }
+
+                DankIcon {
+                    anchors.centerIn: parent
+                    name: "album"
+                    size: 14
+                    color: root.isMasterSink ? Theme.onPrimary : Theme.surfaceVariantText
                 }
             }
 

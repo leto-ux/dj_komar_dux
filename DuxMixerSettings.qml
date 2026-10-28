@@ -15,10 +15,18 @@ PluginSettings {
     // Load initial settings
     property var pinnedSinks: []
     property var customAliases: ({})
+    property string masterSinkName: ""
 
     Component.onCompleted: {
         pinnedSinks = root.loadValue("pinnedSinks", []);
         customAliases = root.loadValue("customAliases", {});
+        masterSinkName = root.loadValue("masterSinkName", "");
+    }
+
+    function setMasterSink(nodeName) {
+        const nextMaster = (masterSinkName === nodeName) ? "" : (nodeName || "");
+        masterSinkName = nextMaster;
+        root.saveValue("masterSinkName", nextMaster);
     }
 
     function saveAlias(nodeName, newAlias) {
@@ -51,7 +59,7 @@ PluginSettings {
         // Header Title & Description
         StyledText {
             width: parent.width
-            text: "Digital Audio Mixer"
+            text: "Dux Mixer"
             font.pixelSize: Theme.fontSizeLarge
             font.weight: Font.Bold
             color: Theme.surfaceText
@@ -92,6 +100,23 @@ PluginSettings {
             label: "Show Master Fader"
             description: "Display a dedicated Master output fader strip on the left side of the mixer console."
             defaultValue: true
+        }
+
+        SelectionSetting {
+            settingKey: "masterSinkName"
+            label: "Master Fader Channel"
+            description: "Manually select which sink is displayed as the Master fader (hiding the default system sink choice)."
+            defaultValue: ""
+            options: {
+                let opts = [{ label: "Automatic (Current System Default Sink)", value: "" }];
+                const nodes = (AudioService.pipewireNodes || []).filter(n => n.isSink && !n.isStream);
+                for (let i = 0; i < nodes.length; i++) {
+                    const n = nodes[i];
+                    const label = (n.description || n.name) + (MixerUtils.isVirtualSink(n) ? " [Virtual]" : " [Hardware]");
+                    opts.push({ label: label, value: n.name });
+                }
+                return opts;
+            }
         }
 
         ToggleSetting {
@@ -173,6 +198,7 @@ PluginSettings {
                         return MixerUtils.isVirtualSink(modelData);
                     }
 
+                    readonly property bool isMaster: root.masterSinkName === modelData.name
                     readonly property string currentAlias: (root.customAliases && root.customAliases[modelData.name]) || ""
 
                     Row {
@@ -196,9 +222,34 @@ PluginSettings {
                             }
                         }
 
+                        // Set as Master Button
+                        Rectangle {
+                            width: 58
+                            height: 24
+                            radius: 4
+                            anchors.verticalCenter: parent.verticalCenter
+                            color: channelConfigRow.isMaster ? Theme.primary : Theme.withAlpha(Theme.surfaceVariantText, 0.15)
+                            border.width: 1
+                            border.color: channelConfigRow.isMaster ? Theme.primary : Theme.withAlpha(Theme.outline, 0.3)
+
+                            StyledText {
+                                anchors.centerIn: parent
+                                text: channelConfigRow.isMaster ? "MASTER" : "Set Master"
+                                font.pixelSize: 9
+                                font.weight: channelConfigRow.isMaster ? Font.Black : Font.Medium
+                                color: channelConfigRow.isMaster ? Theme.onPrimary : Theme.surfaceVariantText
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.setMasterSink(channelConfigRow.modelData.name)
+                            }
+                        }
+
                         // Type Badge & Default Name
                         Column {
-                            width: (parent.width - 24 - 10 - 180 - 10)
+                            width: (parent.width - 24 - 10 - 58 - 10 - 170 - 10)
                             anchors.verticalCenter: parent.verticalCenter
                             spacing: 2
 

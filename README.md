@@ -1,10 +1,10 @@
-# Dux Shell Digital Audio Mixer Plugin (`duxMixer`)
+# Dux Mixer (`duxMixer`)
 
 A digital audio mixer popup plugin for [Dux Shell](https://duxlabs.dev) (Wayland desktop shell built with Quickshell & Go).
 
 Designed for multi-sink audio setups, virtual audio cables, and streaming routing (e.g. Master, Browser, Music, Comms, Games, Others), providing real-time volume faders, decibel readouts, and live VU peak meters.
 
-![Digital Audio Mixer](screenshot.png)
+![Dux Mixer](screenshot.png)
 
 ---
 
@@ -79,12 +79,37 @@ dux_mixer/
 
 ## Keyboard & Mouse Shortcuts
 
+### Global Keyboard Shortcut (Toggle Overlay)
+The plugin exposes a Quickshell IPC target (`duxMixer`) that toggles the mixer overlay on/off (displays it if hidden, hides it if currently displayed):
+
+```bash
+dms ipc call duxMixer toggle
+```
+*(Or using Quickshell directly: `qs ipc call duxMixer toggle`)*
+
+**Example Compositor Keybindings:**
+- **Hyprland (`~/.config/hypr/hyprland.conf`)**:
+  ```ini
+  bind = $mainMod, M, exec, dms ipc call duxMixer toggle
+  ```
+- **Niri (`~/.config/niri/config.kdl`)**:
+  ```kdl
+  Mod+M { spawn "dms" "ipc" "call" "duxMixer" "toggle"; }
+  ```
+- **Sway / i3 (`~/.config/sway/config`)**:
+  ```ini
+  bindsym $mod+m exec dms ipc call duxMixer toggle
+  ```
+
+### In-Mixer Mouse & Key Controls
+- **Escape / Click Outside Backdrop**: Close the mixer overlay.
 - **Click Fader**: Set volume to clicked level.
 - **Drag Fader**: Smooth continuous volume adjustment.
 - **Scroll Wheel over Fader**: Step volume up/down by 2%.
 - **Double-Click Fader Knob**: Reset to 100% (0 dB unity gain).
 - **Click 'M'**: Toggle channel mute.
 - **Click Check / Radio**: Set device as current system default audio output.
+- **Click Disc Icon (`album`)**: Set channel as the dedicated `MASTER` fader strip.
 - **Click Star**: Pin / unpin channel from the curated Mixer view.
 
 ---

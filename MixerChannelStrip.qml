@@ -12,6 +12,7 @@ Rectangle {
     required property var node
     property bool isPinned: false
     property bool isDefaultSink: false
+    property bool isMasterSink: false
     property real maxVolume: 1.0
     property bool showVuMeter: true
     property var customAliases: ({})
@@ -19,6 +20,7 @@ Rectangle {
 
     signal pinToggled(string nodeName)
     signal setDefaultRequested(var targetNode)
+    signal setMasterRequested(string nodeName)
 
     readonly property var audio: (node && node.audio) ? node.audio : null
     readonly property real currentVol: audio ? audio.volume : 0.0
@@ -49,7 +51,7 @@ Rectangle {
             Rectangle {
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
-                width: isVirtual ? 28 : 20
+                width: isVirtual ? 26 : 20
                 height: 16
                 radius: 4
                 color: isVirtual ? Theme.withAlpha(root.accentColor, 0.2) : Theme.withAlpha(Theme.surfaceVariantText, 0.15)
@@ -63,14 +65,39 @@ Rectangle {
                 }
             }
 
+            // Master Fader selection button
+            MouseArea {
+                id: masterArea
+                width: 18
+                height: 18
+                anchors.right: pinArea.left
+                anchors.rightMargin: 2
+                anchors.verticalCenter: parent.verticalCenter
+                cursorShape: Qt.PointingHandCursor
+                hoverEnabled: true
+                onClicked: {
+                    if (node && node.name) {
+                        root.setMasterRequested(node.name);
+                    }
+                }
+
+                DankIcon {
+                    anchors.centerIn: parent
+                    name: "album"
+                    size: 13
+                    color: root.isMasterSink ? Theme.primary : (masterArea.containsMouse ? Theme.surfaceText : Theme.surfaceVariantText)
+                }
+            }
+
             // Pin / Favorite button
             MouseArea {
                 id: pinArea
-                width: 20
-                height: 20
+                width: 18
+                height: 18
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 cursorShape: Qt.PointingHandCursor
+                hoverEnabled: true
                 onClicked: {
                     if (node && node.name) {
                         root.pinToggled(node.name);

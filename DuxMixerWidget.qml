@@ -7,16 +7,21 @@ import qs.Common
 import qs.Services
 import qs.Widgets
 import qs.Modules.Plugins
+import qs.Modals.Common
 import "MixerUtils.js" as MixerUtils
 
 PluginComponent {
     id: root
 
+    pluginId: "duxMixer"
+    pluginService: PluginService
     layerNamespacePlugin: "dux-mixer"
 
     // Configuration / Persistent Settings
     readonly property var savedPins: (pluginData && pluginData.pinnedSinks) ? pluginData.pinnedSinks : []
     property var pinnedSinks: savedPins
+    readonly property string savedMasterSink: (pluginData && pluginData.masterSinkName) ? pluginData.masterSinkName : ""
+    property string masterSinkName: savedMasterSink
     readonly property var customAliases: (pluginData && pluginData.customAliases) ? pluginData.customAliases : ({})
     readonly property bool allowVolumeBoost: (pluginData && pluginData.allowVolumeBoost !== undefined) ? pluginData.allowVolumeBoost : false
     readonly property bool showMasterFader: (pluginData && pluginData.showMasterFader !== undefined) ? pluginData.showMasterFader : true
@@ -24,10 +29,25 @@ PluginComponent {
     property string activeTab: (pluginData && pluginData.defaultTab) ? pluginData.defaultTab : "mixer"
     property string layoutMode: (pluginData && pluginData.layoutMode) ? pluginData.layoutMode : "console"
 
+    onSavedPinsChanged: pinnedSinks = savedPins
+    onSavedMasterSinkChanged: masterSinkName = savedMasterSink
+
     readonly property real maxVolumeLimit: allowVolumeBoost ? 1.5 : 1.0
 
     // All active audio nodes from Pipewire / AudioService
     readonly property var allNodes: AudioService.pipewireNodes || []
+
+    // Resolved Master Node: user-selected sink if found, otherwise default AudioService.sink
+    readonly property var masterNode: {
+        if (masterSinkName && masterSinkName.length > 0) {
+            for (let i = 0; i < allNodes.length; i++) {
+                if (allNodes[i].name === masterSinkName) {
+                    return allNodes[i];
+                }
+            }
+        }
+        return AudioService.sink;
+    }
 
     // Categorized Node Lists
     readonly property var virtualSinks: allNodes.filter(node => MixerUtils.isVirtualSink(node))
@@ -37,24 +57,35 @@ PluginComponent {
 
     // Curated Mixer Nodes:
     // If user has specific pins saved, show those; otherwise default to all virtual sinks + hardware default!
+    // Excludes the resolved masterNode when showMasterFader is enabled so it isn't duplicated.
     readonly property var mixerNodes: {
+        let baseNodes = [];
         if (pinnedSinks && pinnedSinks.length > 0) {
-            return allNodes.filter(node => pinnedSinks.indexOf(node.name) !== -1);
+            baseNodes = allNodes.filter(node => pinnedSinks.indexOf(node.name) !== -1);
+        } else {
+            baseNodes = virtualSinks.length > 0 ? virtualSinks : hardwareSinks;
         }
-        // Default: all virtual sinks
-        return virtualSinks.length > 0 ? virtualSinks : hardwareSinks;
+        if (showMasterFader && masterNode) {
+            return baseNodes.filter(node => node !== masterNode && node.name !== masterNode.name);
+        }
+        return baseNodes;
     }
 
-    // Nodes for current selected tab
+    // Nodes for current selected tab (excluding masterNode when Master Fader is visible)
     readonly property var currentTabNodes: {
+        let list = [];
         switch (activeTab) {
-        case "mixer": return mixerNodes;
-        case "virtual": return virtualSinks;
-        case "hardware": return hardwareSinks;
-        case "apps": return appStreams;
-        case "inputs": return audioSources;
-        default: return mixerNodes;
+        case "mixer": list = mixerNodes; break;
+        case "virtual": list = virtualSinks; break;
+        case "hardware": list = hardwareSinks; break;
+        case "apps": list = appStreams; break;
+        case "inputs": list = audioSources; break;
+        default: list = mixerNodes; break;
         }
+        if (showMasterFader && masterNode) {
+            return list.filter(node => node !== masterNode && node.name !== masterNode.name);
+        }
+        return list;
     }
 
     function isNodePinned(nodeName) {
@@ -62,7 +93,6 @@ PluginComponent {
         if (pinnedSinks && pinnedSinks.length > 0) {
             return pinnedSinks.indexOf(nodeName) !== -1;
         }
-        // If no explicit pins yet, virtual sinks are implicitly in mixer
         for (let i = 0; i < virtualSinks.length; i++) {
             if (virtualSinks[i].name === nodeName) return true;
         }
@@ -75,7 +105,6 @@ PluginComponent {
         if (pinnedSinks && pinnedSinks.length > 0) {
             pins = pinnedSinks.slice();
         } else {
-            // Seed with current virtual sink names
             for (let i = 0; i < virtualSinks.length; i++) {
                 if (virtualSinks[i].name) pins.push(virtualSinks[i].name);
             }
@@ -99,6 +128,14 @@ PluginComponent {
         AudioService.setDefaultSinkByName(targetNode.name);
     }
 
+    function setMasterSink(nodeName) {
+        const nextMaster = (masterSinkName === nodeName) ? "" : (nodeName || "");
+        masterSinkName = nextMaster;
+        if (pluginService) {
+            pluginService.savePluginData(pluginId, "masterSinkName", nextMaster);
+        }
+    }
+
     function setLayout(mode) {
         layoutMode = mode;
         if (pluginService) {
@@ -113,13 +150,63 @@ PluginComponent {
         }
     }
 
-    // Dynamic Popout Dimensions based on layout mode
+    // Overlay Modal / IPC Toggle Controls
+    function openOverlay() {
+        mixerModal.targetScreen = CompositorService.getFocusedScreen() ?? Quickshell.screens[0] ?? null;
+        mixerModal.shouldBeVisible = true;
+        mixerModal.open();
+    }
+
+    function closeOverlay() {
+        mixerModal.close();
+    }
+
+    function toggleOverlay(): string {
+        if (mixerModal.shouldBeVisible) {
+            closeOverlay();
+            return "CLOSED";
+        }
+        openOverlay();
+        return "OPENED";
+    }
+
+    IpcHandler {
+        target: "duxMixer"
+
+        function toggle(): string {
+            return root.toggleOverlay();
+        }
+
+        function open(): string {
+            root.openOverlay();
+            return "OPENED";
+        }
+
+        function close(): string {
+            root.closeOverlay();
+            return "CLOSED";
+        }
+    }
+
+    // Dynamic Popout Dimensions based on layout mode and content
     popoutWidth: layoutMode === "console" ? 560 : 480
-    popoutHeight: 460
+    popoutHeight: {
+        const count = currentTabNodes ? currentTabNodes.length : 0;
+        const hasMaster = (showMasterFader && masterNode) ? 1 : 0;
+        if (count === 0 && !hasMaster) {
+            return 280;
+        }
+        if (layoutMode === "rack") {
+            const totalRows = count + hasMaster;
+            const listHeight = Math.min(340, totalRows * 64 - 6);
+            return Math.max(200, listHeight + 80);
+        }
+        return 415;
+    }
 
     // Control Center Integration
     ccWidgetIcon: "tune"
-    ccWidgetPrimaryText: "Audio Mixer"
+    ccWidgetPrimaryText: "Dux Mixer"
     ccWidgetSecondaryText: virtualSinks.length + " Virtual Sinks"
     ccWidgetIsActive: true
     ccWidgetIsToggle: false
@@ -138,13 +225,13 @@ PluginComponent {
                 anchors.verticalCenter: parent.verticalCenter
                 name: "tune"
                 size: Math.min(root.widgetThickness, 18)
-                color: (AudioService.sink && AudioService.sink.audio && AudioService.sink.audio.muted) ? Theme.error : Theme.surfaceText
+                color: (root.masterNode && root.masterNode.audio && root.masterNode.audio.muted) ? Theme.error : Theme.surfaceText
             }
 
             StyledText {
                 anchors.verticalCenter: parent.verticalCenter
                 text: {
-                    const vol = (AudioService.sink && AudioService.sink.audio) ? Math.round(AudioService.sink.audio.volume * 100) : 0;
+                    const vol = (root.masterNode && root.masterNode.audio) ? Math.round(root.masterNode.audio.volume * 100) : 0;
                     return vol + "%";
                 }
                 font.pixelSize: Theme.fontSizeSmall
@@ -183,13 +270,13 @@ PluginComponent {
                 anchors.horizontalCenter: parent.horizontalCenter
                 name: "tune"
                 size: Math.min(root.widgetThickness, 18)
-                color: (AudioService.sink && AudioService.sink.audio && AudioService.sink.audio.muted) ? Theme.error : Theme.surfaceText
+                color: (root.masterNode && root.masterNode.audio && root.masterNode.audio.muted) ? Theme.error : Theme.surfaceText
             }
 
             StyledText {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: {
-                    const vol = (AudioService.sink && AudioService.sink.audio) ? Math.round(AudioService.sink.audio.volume * 100) : 0;
+                    const vol = (root.masterNode && root.masterNode.audio) ? Math.round(root.masterNode.audio.volume * 100) : 0;
                     return vol + "%";
                 }
                 font.pixelSize: 8
@@ -198,75 +285,20 @@ PluginComponent {
         }
     }
 
-    // Popout Content (Audio Mixer Console)
+    // Popout Content (Dux Mixer Console)
     popoutContent: Component {
-        PopoutComponent {
+        FocusScope {
             id: mixerPopout
+            width: parent ? parent.width : root.popoutWidth
+            implicitHeight: mainColumn.implicitHeight
+            focus: true
 
-            headerText: "Digital Audio Mixer"
-            detailsText: ""
+            property var closePopout: null
+            property var parentPopout: null
 
-            // Header Action Icons
-            headerActions: Component {
-                Row {
-                    spacing: 4
-
-                    // Create Virtual Sink Button
-                    Rectangle {
-                        width: 28
-                        height: 28
-                        radius: 6
-                        color: addSinkDrawer.isOpen ? Theme.primary : (createHover.containsMouse ? Theme.surfaceContainerHighest : Theme.surfaceContainerHigh)
-                        border.width: 1
-                        border.color: Theme.withAlpha(Theme.outline, 0.3)
-
-                        MouseArea {
-                            id: createHover
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            hoverEnabled: true
-                            onClicked: addSinkDrawer.isOpen = !addSinkDrawer.isOpen
-                        }
-
-                        DankIcon {
-                            anchors.centerIn: parent
-                            name: "add"
-                            size: 16
-                            color: addSinkDrawer.isOpen ? Theme.onPrimary : Theme.surfaceText
-                        }
-                    }
-
-                    // Layout Switcher Button (Console vs Rack)
-                    Rectangle {
-                        width: 28
-                        height: 28
-                        radius: 6
-                        color: layoutHover.containsMouse ? Theme.surfaceContainerHighest : Theme.surfaceContainerHigh
-                        border.width: 1
-                        border.color: Theme.withAlpha(Theme.outline, 0.3)
-
-                        MouseArea {
-                            id: layoutHover
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            hoverEnabled: true
-                            onClicked: {
-                                root.setLayout(root.layoutMode === "console" ? "rack" : "console");
-                            }
-                        }
-
-                        DankIcon {
-                            anchors.centerIn: parent
-                            name: root.layoutMode === "console" ? "view_agenda" : "view_column"
-                            size: 16
-                            color: Theme.surfaceText
-                        }
-                    }
-                }
-            }
-
-            // Main Popout Body
+            // Main Body
             Column {
+                id: mainColumn
                 width: parent.width
                 spacing: 8
 
@@ -277,18 +309,18 @@ PluginComponent {
                     isOpen: false
                     onCloseRequested: isOpen = false
                     onSinkCreated: name => {
-                        // Automatically switch to virtual tab to see new sink
                         root.setTab("virtual");
                     }
                 }
 
-                // Filter / Category Tabs Bar
+                // Filter / Category Tabs Bar + Action Buttons
                 Item {
                     width: parent.width
                     height: 32
 
                     Row {
-                        anchors.fill: parent
+                        anchors.left: parent.left
+                        anchors.verticalCenter: parent.verticalCenter
                         spacing: 6
 
                         Repeater {
@@ -341,11 +373,70 @@ PluginComponent {
                             }
                         }
                     }
+
+                    // Action Buttons (Create Virtual Sink & Layout Switcher)
+                    Row {
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 4
+
+                        // Create Virtual Sink Button
+                        Rectangle {
+                            width: 28
+                            height: 28
+                            radius: 6
+                            color: addSinkDrawer.isOpen ? Theme.primary : (createHover.containsMouse ? Theme.surfaceContainerHighest : Theme.surfaceContainerHigh)
+                            border.width: 1
+                            border.color: Theme.withAlpha(Theme.outline, 0.3)
+
+                            MouseArea {
+                                id: createHover
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                hoverEnabled: true
+                                onClicked: addSinkDrawer.isOpen = !addSinkDrawer.isOpen
+                            }
+
+                            DankIcon {
+                                anchors.centerIn: parent
+                                name: "add"
+                                size: 16
+                                color: addSinkDrawer.isOpen ? Theme.onPrimary : Theme.surfaceText
+                            }
+                        }
+
+                        // Layout Switcher Button (Console vs Rack)
+                        Rectangle {
+                            width: 28
+                            height: 28
+                            radius: 6
+                            color: layoutHover.containsMouse ? Theme.surfaceContainerHighest : Theme.surfaceContainerHigh
+                            border.width: 1
+                            border.color: Theme.withAlpha(Theme.outline, 0.3)
+
+                            MouseArea {
+                                id: layoutHover
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                hoverEnabled: true
+                                onClicked: {
+                                    root.setLayout(root.layoutMode === "console" ? "rack" : "console");
+                                }
+                            }
+
+                            DankIcon {
+                                anchors.centerIn: parent
+                                name: root.layoutMode === "console" ? "view_agenda" : "view_column"
+                                size: 16
+                                color: Theme.surfaceText
+                            }
+                        }
+                    }
                 }
 
                 // Empty State if no channels in selected category
                 Rectangle {
-                    visible: root.currentTabNodes.length === 0
+                    visible: root.currentTabNodes.length === 0 && !(root.layoutMode === "console" && root.showMasterFader && root.masterNode)
                     width: parent.width
                     height: 200
                     radius: Theme.cornerRadius
@@ -381,7 +472,7 @@ PluginComponent {
 
                 // CONSOLE VIEW (Vertical Strips with Master Fader)
                 Row {
-                    visible: root.layoutMode === "console" && root.currentTabNodes.length > 0
+                    visible: root.layoutMode === "console" && (root.currentTabNodes.length > 0 || (root.showMasterFader && root.masterNode))
                     width: parent.width
                     height: 340
                     spacing: 8
@@ -389,7 +480,7 @@ PluginComponent {
                     // Master Channel Strip (Fixed on the left)
                     MixerMasterStrip {
                         visible: root.showMasterFader
-                        node: AudioService.sink
+                        node: root.masterNode
                         maxVolume: root.maxVolumeLimit
                         showVuMeter: root.enableVuMeters
                         activePopout: true
@@ -443,19 +534,18 @@ PluginComponent {
                 }
 
                 // RACK VIEW (Horizontal Slider Cards)
-                ListView {
-                    visible: root.layoutMode === "rack" && root.currentTabNodes.length > 0
+                Column {
+                    visible: root.layoutMode === "rack" && (root.currentTabNodes.length > 0 || (root.showMasterFader && root.masterNode))
                     width: parent.width
-                    height: 340
-                    clip: true
                     spacing: 6
-                    model: root.currentTabNodes
 
-                    delegate: MixerChannelRow {
-                        required property var modelData
-                        node: modelData
-                        isPinned: root.isNodePinned(modelData.name)
-                        isDefaultSink: modelData === AudioService.sink
+                    // Fixed Master Row at top of Rack View
+                    MixerChannelRow {
+                        visible: root.showMasterFader && root.masterNode !== null
+                        width: parent.width
+                        node: root.masterNode
+                        isPinned: root.masterNode ? root.isNodePinned(root.masterNode.name) : false
+                        isDefaultSink: true
                         maxVolume: root.maxVolumeLimit
                         showVuMeter: root.enableVuMeters
                         customAliases: root.customAliases
@@ -463,6 +553,29 @@ PluginComponent {
 
                         onPinToggled: nodeName => root.togglePin(nodeName)
                         onSetDefaultRequested: targetNode => root.setDefaultSink(targetNode)
+                    }
+
+                    ListView {
+                        visible: root.currentTabNodes.length > 0
+                        width: parent.width
+                        height: Math.min(root.showMasterFader && root.masterNode ? 276 : 340, Math.max(58, root.currentTabNodes.length * 64 - 6))
+                        clip: true
+                        spacing: 6
+                        model: root.currentTabNodes
+
+                        delegate: MixerChannelRow {
+                            required property var modelData
+                            node: modelData
+                            isPinned: root.isNodePinned(modelData.name)
+                            isDefaultSink: modelData === AudioService.sink
+                            maxVolume: root.maxVolumeLimit
+                            showVuMeter: root.enableVuMeters
+                            customAliases: root.customAliases
+                            activePopout: true
+
+                            onPinToggled: nodeName => root.togglePin(nodeName)
+                            onSetDefaultRequested: targetNode => root.setDefaultSink(targetNode)
+                        }
                     }
                 }
 
@@ -486,6 +599,34 @@ PluginComponent {
                         font.pixelSize: 9
                         color: Theme.withAlpha(Theme.surfaceVariantText, 0.7)
                     }
+                }
+            }
+        }
+    }
+
+    // Standalone Overlay Modal (for `dms ipc call duxMixer toggle`)
+    DModal {
+        id: mixerModal
+        shouldBeVisible: false
+        positioning: "center"
+        enableShadow: true
+        useOverlayLayer: true
+        closeOnEscapeKey: true
+        closeOnBackgroundClick: true
+        onBackgroundClicked: close()
+
+        modalWidth: root.popoutWidth + Theme.spacingM * 2
+        modalHeight: root.popoutHeight + Theme.spacingM * 2
+
+        content: Component {
+            Item {
+                anchors.fill: parent
+                anchors.margins: Theme.spacingM
+
+                Loader {
+                    anchors.fill: parent
+                    active: mixerModal.shouldBeVisible
+                    sourceComponent: root.popoutContent
                 }
             }
         }

@@ -10,6 +10,7 @@ Rectangle {
     id: root
 
     property var node: AudioService.sink
+    property var customAliases: ({})
     property real maxVolume: 1.0
     property bool showVuMeter: true
     property bool activePopout: true
@@ -17,7 +18,8 @@ Rectangle {
     readonly property var audio: (node && node.audio) ? node.audio : null
     readonly property real currentVol: audio ? audio.volume : 0.0
     readonly property bool isMuted: audio ? audio.muted : false
-    readonly property string deviceName: AudioService.displayName(node) || "Master Output"
+    readonly property string deviceName: node ? MixerUtils.getCleanName(node, customAliases) : "Master Output"
+    readonly property string channelIcon: node ? MixerUtils.getChannelIcon(node) : "volume_up"
 
     width: 82
     implicitWidth: 82
@@ -69,7 +71,7 @@ Rectangle {
 
                 DankIcon {
                     anchors.centerIn: parent
-                    name: AudioService.volumeIconName(node)
+                    name: root.channelIcon
                     size: 16
                     color: Theme.primary
                 }
