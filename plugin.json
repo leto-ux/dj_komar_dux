@@ -1,0 +1,26 @@
+{
+  "$schema": "https://github.com/AvengeMedia/DankMaterialShell/raw/refs/heads/master/PLUGINS/plugin-schema.json",
+  "id": "duxMixer",
+  "name": "Digital Audio Mixer",
+  "description": "Digital audio mixer popup to monitor and control volume levels of chosen virtual sinks and audio devices with live VU peak meters.",
+  "version": "1.0.0",
+  "author": "Mirai",
+  "type": "widget",
+  "capabilities": [
+    "dankbar-widget",
+    "control-center",
+    "audio"
+  ],
+  "component": "./DuxMixerWidget.qml",
+  "settings": "./DuxMixerSettings.qml",
+  "icon": "tune",
+  "requires_dms": ">=2.0.0",
+  "dependencies": [
+    "pactl"
+  ],
+  "permissions": [
+    "settings_read",
+    "settings_write",
+    "process"
+  ]
+}
